@@ -1,0 +1,11 @@
+arrow
+bson
+
+# this is a stupid dependency, only used for bson.json_util
+# but it may actually be useful later, so not refactoring and
+# leaving it in
+pymongo
+requests
+requests-toolbelt
+tabulate
+colorama

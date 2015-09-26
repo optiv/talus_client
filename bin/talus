@@ -1,0 +1,91 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
+import json
+import os
+import pipes
+import shlex
+import sys
+import textwrap
+
+from talus_client.cmds import TalusCmd, ENABLED_COMMANDS
+
+import readline
+import rlcompleter
+if 'libedit' in readline.__doc__:
+	readline.parse_and_bind("bind ^I rl_complete")
+else:
+	readline.parse_and_bind("tab: complete")
+
+if __name__ == "__main__":
+	host = "http://localhost:8001"
+	if len(sys.argv) > 1 and sys.argv[1] in ["--host"]:
+		host = sys.argv[2]
+		del sys.argv[1]
+		del sys.argv[1]
+	
+	talusrc_path = os.path.join(os.path.expanduser("~"), ".talusrc")
+	if os.path.exists(talusrc_path):
+		with open(talusrc_path, "rb") as f:
+			data = json.loads(f.read())
+		host = data["host"]
+		user = data["user"]
+	
+	else:
+		host = raw_input("You don't have a ~/.talusrc. Give me the URL (and port) of the talus master web server.\nE.g. http://some.host.name:55555\nyour turn: ")
+		host = host.strip()
+
+		while True:
+			answer = raw_input("Are you sure the host is {!r}? (not a trick question) (y/n): ".format(host))
+			if answer.strip().lower() in ["y", "yes"]:
+				print("cool")
+				break
+			host = raw_input("ok, enter it again. Don't mess up this time: ")
+
+		user = raw_input("You also don't have a username. Make one up please (and be reasonable): ")
+		while True:
+			answer = raw_input("You want to use '{}' as your username? (y/n) ")
+			if answer.lower().strip() in ["y", "yes"]:
+				print("ok, nice to meet you, *quote* {} *quote*".format(user))
+				break
+			else:
+				user = raw_input("Enter your name again... (gosh) : ")
+
+		with open(talusrc_path, "w") as f:
+			f.write(json.dumps({"host": host, "user": user}))
+	
+	if len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h", "-help", "-?", "help"]:
+		# the user is trying to do some form of ./talus help <subcmd>
+		if len(sys.argv) > 2:
+			cmder = TalusCmd("placeholder", one_shot=True)
+			cmder.onecmd("help " + " ".join(sys.argv[2:]))
+			exit()
+
+		else:
+			cmd_helps = ""
+			for cmd_class in ENABLED_COMMANDS:
+				cmd_helps += cmd_class.get_help(abbrev=True)
+
+		print("""
+{this_name} TALUS_URL [-h HOST_URL] <cmd-name> <cmd-args>
+
+--host   the url of the talus host (http://localhost:8001 default)
+
+Available commands:
+{cmd_helps}""".format(
+			this_name=sys.argv[0],
+			cmd_helps=cmd_helps
+		))
+		exit()
+
+	one_shot = len(sys.argv) > 1
+	cmder = TalusCmd(host, one_shot=one_shot, user=user)
+
+	# run a single command
+	if one_shot:
+		cmder.onecmd(" ".join(pipes.quote(x) for x in sys.argv[1:]))
+	
+	# drop into the shell
+	else:
+		cmder.cmdloop()
+		pass
