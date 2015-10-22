@@ -114,8 +114,9 @@ class JobCmd(TalusCmdBase):
 				job_errors += "\n".join([
 					"ERROR {}".format(idx),
 					"---------",
-					error["message"],
 					"\n".join("    {}".format(x) for x in error["logs"]),
+					error["message"],
+					error["backtrace"],
 					"\n\n",
 				])
 
