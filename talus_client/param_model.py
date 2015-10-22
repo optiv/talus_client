@@ -153,6 +153,8 @@ class ParameterCmd(TalusCmdBase):
 		self._params[field_name] = fset.id
 	
 	def do_show(self, args):
+		"""Show the current fields and their values
+		"""
 		fields = []
 		for pinfo in self._code_model.params:
 			field_val = self._params.setdefault(pinfo["name"], None)
@@ -243,6 +245,8 @@ class ModelCmd(TalusCmdBase):
 		}
 	
 	def do_show(self, args):
+		"""Show the current fields and their values
+		"""
 		fields = []
 
 		for field_name in self._model.fields.keys():

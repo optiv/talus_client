@@ -2,10 +2,15 @@
 # encoding: utf-8
 
 import colorama
-from tabulate import tabulate
+import os
+import random
+import re
 import requests
+from tabulate import tabulate
 
 colorama.init()
+
+import talus_client.errors as errors
 
 class Colors:
 	HEADER = colorama.Fore.MAGENTA
@@ -30,6 +35,8 @@ def json_request(method, *args, **params):
 
 	try:
 		res = method(*args, **params)
+	except requests.ConnectionError as e:
+		raise errors.TalusApiError("Could not connect to {}".format(args[0]))
 	except Exception as e:
 		return None
 
@@ -95,3 +102,17 @@ def idx_prompt(fields, prompt_text, headers=None, colors=True):
 			answer = raw_input(Colors.WARNING + "idx out of range, try again (idx or q):" + Colors.ENDC + " ")
 	
 	return idx
+
+with open(os.path.join(os.path.dirname(__file__), "adjectives.txt"), "r") as f:
+	ADJECTIVES = f.read().split("\n")
+with open(os.path.join(os.path.dirname(__file__), "nouns.txt"), "r") as f:
+	NOUNS = f.read().split("\n")
+
+def rand_words(adjectives=1, nouns=1):
+	adj = [random.choice(ADJECTIVES) for x in xrange(adjectives)]
+	nouns = [random.choice(NOUNS) for x in xrange(nouns)]
+
+	return adj + nouns
+
+def strip_color(data):
+	return re.sub(r'\x1b[^m]*m', '', data)

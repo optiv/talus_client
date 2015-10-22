@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
+import json
 import os
 import collections
 import datetime
@@ -96,7 +97,11 @@ class TalusClient(object):
 		"""List all files in the corpus, using the ``filters`` to search/filter
 		the results
 		"""
-		res = requests.get(self._api_base + "/api/corpus/", params=filters)
+		try:
+			res = requests.get(self._api_base + "/api/corpus/", params=filters)
+		except requests.ConnectionError as e:
+			raise errors.TalusApiError("Could not connect to {}".format(self._api_base + "/api/corpus/"))
+
 		if res.status_code // 100 != 2:
 			raise errors.TalusApiError("Could not list corpus files", error=res.text)
 
@@ -118,7 +123,11 @@ class TalusClient(object):
 	def corpus_get(self, file_id):
 		"""Fetch the file with id ``file_id`` from the corpus
 		"""
-		res = requests.get(self._api_base + "/api/corpus/{}".format(file_id))
+		try:
+			res = requests.get(self._api_base + "/api/corpus/{}".format(file_id))
+		except requests.ConnectionError as e:
+			raise errors.TalusApiError("Could not connect to {}".format(self._api_base + "/api/corpus/{}".format(file_id)))
+
 		if res.status_code // 100 != 2:
 			raise errors.TalusApiError("Could not fetch corpus file with id {}".format(file_id), error=res.text)
 
@@ -128,7 +137,11 @@ class TalusClient(object):
 	def corpus_delete(self, file_id):
 		"""Delete the file with id ``file_id`` from the corpus
 		"""
-		res = requests.delete(self._api_base + "/api/corpus/{}".format(file_id))
+		try:
+			res = requests.delete(self._api_base + "/api/corpus/{}".format(file_id))
+		except requests.ConnectionError as e:
+			raise errors.TalusApiError("Could not connect to {}".format(self._api_base + "/api/corpus/{}".format(file_id)))
+
 		if res.status_code // 100 != 2:
 			raise errors.TalusApiError("Could not delete corpus file with id {}".format(file_id), error=res.text)
 
@@ -138,11 +151,11 @@ class TalusClient(object):
 	# VM image handling
 	# -------------------------
 
-	def image_iter(self):
+	def image_iter(self, **search):
 		"""Return an iterator that iterates over all existing images in Talus
 		:returns: iterator over all existing images
 		"""
-		for image in Image.objects(api_base=self._api_base):
+		for image in Image.objects(api_base=self._api_base, **search):
 			yield image
 
 	def image_import(self, image_path, image_name, os_id, desc="desc", tags=None, username="user", password="password", file_id=None):
@@ -174,6 +187,7 @@ class TalusClient(object):
 			tags = []
 
 		image = Image(api_base=self._api_base)
+		self._prep_model(image)
 		image.name = image_name
 		image.os = os.id
 		image.desc = desc
@@ -200,8 +214,13 @@ class TalusClient(object):
 		"""
 		image = self._name_or_id(Image, image_id_or_name)
 		if image is None:
-			print("image with id or name {!r} not found".format(image_id_or_name))
+			raise errors.TalusApiError("image with id or name {!r} not found".format(image_id_or_name))
 			return
+
+		if image.status["name"] != "ready":
+			raise errors.TalusApiError("Image is not in ready state, cannot configure (state is {})".format(
+				image.status["name"]
+			))
 
 		image.status = {
 			"name": "configure",
@@ -241,7 +260,10 @@ class TalusClient(object):
 		image.base_image = base_image_id
 
 		if os_id is not None:
-			image.os = os_id
+			os = self.os_find(os_id)
+			if os is None:
+				raise errors.TalusApiError("No os found by name/id '{}'".format(os_id))
+			image.os = os.id
 		if desc is not None:
 			image.desc = desc
 		if tags is not None:
@@ -279,12 +301,15 @@ class TalusClient(object):
 	# VM os handling
 	# -------------------------
 
-	def os_iter(self):
+	def os_iter(self, **search):
 		"""Return an iterator that iterates over all existing OS models in Talus
 		:returns: iterator
 		"""
-		for os_ in OS.objects(api_base=self._api_base):
+		for os_ in OS.objects(api_base=self._api_base, **search):
 			yield os_
+	
+	def os_find(self, name_or_id, **search):
+		return self._name_or_id(OS, name_or_id, **search)
 	
 	def os_delete(self, os_id):
 		"""Delete an os by ``os_id`` which may be the id or name
@@ -315,21 +340,35 @@ class TalusClient(object):
 	def code_find(self, name_or_id, **search):
 		return self._name_or_id(Code, name_or_id, **search)
 	
-	def code_create(self, code_name, code_type):
+	def code_create(self, code_name, code_type, tags=None):
 		"""Create the code, and return the results"""
 		data = {
 			"name": code_name,
-			"type": code_type
+			"type": code_type,
 		}
+
+		if self._user is not None:
+			if tags is None:
+				tags = []
+			if self._user not in tags:
+				tags.append(self._user)
+
+		if tags is not None:
+			data["tags"] = json.dumps(tags)
+
 		e = MultipartEncoder(fields=data)
-		res = requests.post(self._api_base + "/api/code/create/",
-			data	= e,
-			headers	= {"Content-Type": e.content_type}
-		)
+
+		try:
+			res = requests.post(self._api_base + "/api/code/create/",
+				data	= e,
+				headers	= {"Content-Type": e.content_type}
+			)
+		except requests.ConnectionError as e:
+			raise errors.TalusApiError("Could not connect to {}".format(self._api_base + "/api/code/create"))
 		if res.status_code // 100 != 2:
 			raise errors.TalusApiError("Could not create code!", error=res.text)
 
-		return res.text
+		return json.loads(res.text)
 
 	# -------------------------
 	# task handling
@@ -340,11 +379,11 @@ class TalusClient(object):
 		"""
 		return self._name_or_id(Task, name_or_id, **search)
 
-	def task_iter(self):
+	def task_iter(self, **search):
 		"""Return an iterator that iterates over all existing Task models in Talus
 		:returns: iterator
 		"""
-		for task in Task.objects(api_base=self._api_base):
+		for task in Task.objects(api_base=self._api_base, **search):
 			yield task
 
 	def task_create(self, name, tool_id, params, version=None, limit=1, vm_max="30m"):
@@ -408,6 +447,16 @@ class TalusClient(object):
 			yield slave
 		
 	# -------------------------
+	# master handling
+	# -------------------------
+
+	def master_get(self):
+		res = Master.objects(api_base=self._api_base)
+		if len(res) == 0:
+			raise errors.TalusApiError("No master model has been created in the DB! Is it not running?")
+		return res[0]
+		
+	# -------------------------
 	# job handling
 	# -------------------------
 
@@ -422,7 +471,7 @@ class TalusClient(object):
 		for job in Job.objects(api_base=self._api_base, **search):
 			yield job
 	
-	def job_create(self, task_name_or_id, image=None, name=None, params=None, priority=50, queue="jobs", limit=1, vm_max=None, network="whitelist", debug=False):
+	def job_create(self, task_name_or_id, image=None, name=None, params=None, priority=50, queue="jobs", limit=1, vm_max=None, network="whitelist", debug=False, tags=None):
 		"""Create a new job (run a task)"""
 		task = self._name_or_id(Task, task_name_or_id)
 		if task is None:
@@ -478,16 +527,22 @@ class TalusClient(object):
 		job.vm_max = vm_max
 		job.network = network
 		job.debug = debug
+
+		if tags is not None and isinstance(tags, list):
+			job.tags += tags
+
 		job.save()
 		
 		return job
 	
-	def job_cancel(self, job_name_or_id):
+	def job_cancel(self, job_name_or_id, job=None):
 		"""Cancel the job ``job_name_or_id`` in talus
 
 		:job_name_or_id: The job name or id to cancel
 		"""
-		job = self._name_or_id(Job, job_name_or_id)
+		if job is None:
+			job = self._name_or_id(Job, job_name_or_id)
+
 		if job is None:
 			raise errors.TalusApiError("could not locate job with name or id {!r}".format(job_name_or_id))
 
@@ -598,12 +653,16 @@ class TalusClient(object):
 
 		e = MultipartEncoder(fields=data)
 		m = MultipartEncoderMonitor(e, print_progress)
-		res = requests.post(
-			self._api_base + "/api/{}/".format(api_endpoint),
-			data=m,
-			headers={"Content-Type":e.content_type},
-			timeout=(60*60) # super long timeout for uploading massive files!
-		)
+
+		try:
+			res = requests.post(
+				self._api_base + "/api/{}/".format(api_endpoint),
+				data=m,
+				headers={"Content-Type":e.content_type},
+				timeout=(60*60) # super long timeout for uploading massive files!
+			)
+		except requests.ConnectionError as e:
+			raise errors.TalusApiError("Could not connect to {}".format(self._api_base + "/api/{}/".format(api_endpoint)))
 
 		# clear out the last of the progress percent that was printed
 		print("\b" * len(self.last_update))

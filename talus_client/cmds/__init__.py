@@ -2,8 +2,11 @@
 # encoding: utf-8
 
 import argparse
+import arrow
 import cmd
+import datetime
 import glob
+import json
 import inspect
 import os
 import re
@@ -14,7 +17,7 @@ import textwrap
 import types
 
 import talus_client.api
-import talus_client.errors
+import talus_client.errors as errors
 import talus_client.utils as utils
 from talus_client.utils import Colors
 
@@ -58,6 +61,109 @@ class TalusCmdBase(object,cmd.Cmd):
 		if self._talus_host is not None and self._talus_client is None:
 			self._talus_client = talus_client.api.TalusClient(self._talus_host, user=self._talus_user)
 	
+	def _nice_name(self, model, attr):
+		if "name" in model._fields[attr].value:
+			return "{} ({})".format(model._fields[attr]["name"], model._fields[attr]["id"])
+		else:
+			return getattr(model, attr)
+	
+	def _resolve_one_model(self, id_or_name, model, search, sort="-timestamps.created", default_id_search=None):
+		if default_id_search is None:
+			default_id_search = ["id", "name"]
+
+		if id_or_name is not None and not id_or_name.startswith("+"):
+			for default_compare in default_id_search:
+				res = model.find_one(**{default_compare:id_or_name})
+				if res is not None:
+					return res
+			return None
+
+		if id_or_name is None:
+			skip = 0
+		else:
+			if not re.match(r'^\+\d+$', id_or_name):
+				raise errors.TalusApiError("Git-like referencing must be a plus sign followed by digits")
+			skip = int(id_or_name.replace("+", "")) - 1
+		search["skip"] = skip
+		search["num"] = 1
+		search["sort"] = sort
+		return model.find_one(**search)
+	
+	def _search_terms(self, parts, key_remap=None, user_default_filter=True, out_leftover=None):
+		"""Return a dictionary of search terms"""
+		search = {}
+		key = None
+		if key_remap is None:
+			key_remap = {}
+
+		key_map = {
+			"status": "status.name"
+		}
+		key_map.update(key_remap)
+		found_all = False
+
+		for item in parts:
+			if key is None:
+				if not item.startswith("--"):
+					if out_leftover is not None:
+						out_leftover.append(item)
+						continue
+					else:
+						raise errors.TalusApiError("args must be alternating search item/value pairs!")
+				item = item[2:].replace("-", "_")
+				key = item
+				if key == "all":
+					found_all = True
+					key = None
+					continue
+
+				if key in key_map:
+					key = key_map[key]
+
+				if key.endswith("__type") or key.endswith(".type"):
+					key += "_"
+
+			elif key is not None:
+				# hex conversion
+				if re.match(r'^0x[0-9a-f]+$', item, re.IGNORECASE) is not None:
+					item = int(item, 16)
+
+				if key in search and not isinstance(search[key], list):
+					search[key] = [search[key]]
+
+				if key in search and isinstance(search[key], list):
+					search[key].append(item)
+				else:
+					search[key] = item
+				self.out("searching for {} = {}".format(key, item))
+
+				# reset this
+				key = None
+
+		if user_default_filter and not found_all and self._talus_user is not None:
+			# default filter by username tag
+			self.out("default filtering by username (searching for tags = {})".format(self._talus_user))
+			self.out("use --all to view all models")
+
+			if "tags" in search and not isinstance(search["tags"], list):
+				search["tags"] = [search["tags"]]
+
+			if "tags" in search and isinstance(search["tags"], list):
+				search["tags"].append(self._talus_user)
+			else:
+				search["tags"] = self._talus_user
+
+		if out_leftover is not None and key is not None:
+			out_leftover.append(key)
+
+		return search
+	
+	def _actual_date(self, epoch):
+		return datetime.datetime.fromtimestamp(epoch).strftime("%Y-%m-%d %H:%M:%S")
+	
+	def _rel_date(self, epoch):
+		return arrow.get(epoch).humanize()
+	
 	def _prep_model(self, model):
 		if hasattr(model, "tags") and self._talus_user is not None and self._talus_user not in model.tags:
 			model.tags.append(self._talus_user)
@@ -74,9 +180,6 @@ class TalusCmdBase(object,cmd.Cmd):
 	def ask(self, msg):
 		msg = Colors.WARNING + msg + Colors.ENDC
 		return raw_input(msg)
-	
-	def ok(self, msg):
-		print
 
 	def ok(self, msg):
 		"""
@@ -135,6 +238,8 @@ class TalusCmdBase(object,cmd.Cmd):
 	def do_quit(self, args):
 		"""Quit the program"""
 		return True
+	do_exit = do_quit
+	do_exit.__doc__ = do_quit.__doc__
 	
 	def cmdloop(self, *args, **kwargs):
 		try:
@@ -147,7 +252,7 @@ class TalusCmdBase(object,cmd.Cmd):
 		try:
 			return cmd.Cmd.onecmd(self, *args, **kwargs)
 		except talus_client.errors.TalusApiError as e:
-			sys.stderr.write(e.message + "\n")
+			self.err(e.message)
 		except KeyboardInterrupt as e:
 			if not self._last_was_keyboard:
 				self.err("cancelled")
@@ -167,7 +272,7 @@ class TalusCmdBase(object,cmd.Cmd):
 		first_param = parts[0]
 		matches = filter(lambda x: x.startswith("do_" + first_param), funcs)
 		if len(matches) > 1:
-			print("ambiguous command, matching commands:")
+			self.warn("ambiguous command, matching commands:")
 			for match in matches:
 				print("    " + match.replace("do_", ""))
 			return
@@ -176,7 +281,7 @@ class TalusCmdBase(object,cmd.Cmd):
 			func = getattr(self, matches[0])
 			return func(" ".join(parts[1:]))
 
-		print("Unknown command. Try the 'help' command.")
+		self.err("Unknown command. Try the 'help' command.")
 	
 	def completedefault(self, text, line, begidx, endidx):
 		funcs = filter(lambda x: x.startswith("do_"), dir(self))

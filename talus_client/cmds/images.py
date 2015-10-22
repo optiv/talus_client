@@ -31,7 +31,30 @@ class ImageCmd(TalusCmdBase):
 
 			image list
 		"""
-		print(tabulate(self._talus_client.image_iter(), headers=Image.headers()))
+		parts = shlex.split(args)
+
+		search = self._search_terms(parts, user_default_filter=False)
+
+		if "sort" not in search:
+			search["sort"] = "timestamps.created"
+
+		if "--all" not in parts and "num" not in search:
+			search["num"] = 20
+			self.out("showing first 20 results, use --all to see everything")
+
+		fields = []
+		for image in self._talus_client.image_iter(**search):
+			fields.append([
+				image.id,
+				image.name,
+				image.status["name"],
+				image.tags,
+				self._nice_name(image, "base_image") if image.base_image is not None else None,
+				self._nice_name(image, "os"),
+				image.md5,
+			])
+
+		print(tabulate(fields, headers=Image.headers()))
 	
 	def do_info(self, args):
 		"""List detailed information about an image
@@ -127,6 +150,7 @@ class ImageCmd(TalusCmdBase):
 			image.username = "user"
 			image.password = "password"
 			image.md5 = " "
+			image.desc = "some description"
 			image.status = {
 				"name": "create",
 				"vagrantfile": None,
@@ -174,9 +198,9 @@ class ImageCmd(TalusCmdBase):
 					image.save()
 					self.ok("created new image {}".format(image.id))
 				except errors.TalusApiError as e:
-					print(e.message)
+					self.err(e.message)
 				else:
-					break
+					self._wait_for_image(image, image.status["user_interaction"])
 
 			return
 
@@ -184,12 +208,15 @@ class ImageCmd(TalusCmdBase):
 		parser.add_argument("--os", "-o", default=None)
 		parser.add_argument("--base", "-b", default=None)
 		parser.add_argument("--name", "-n", default=None)
-		parser.add_argument("--desc", "-d", default=None)
-		parser.add_argument("--tags", "-t", default=None)
+		parser.add_argument("--desc", "-d", default="")
+		parser.add_argument("--tags", "-t", default="")
 		parser.add_argument("--vagrantfile", "-v", default=None, type=argparse.FileType("rb"))
 		parser.add_argument("--interactive", "-i", action="store_true", default=False)
 
 		args = parser.parse_args(args)
+
+		if args.name is None:
+			raise errors.TalusApiError("You must specify an image name")
 
 		vagrantfile_contents = None
 		if args.vagrantfile is not None:
@@ -284,11 +311,11 @@ class ImageCmd(TalusCmdBase):
 				image.refresh()
 
 			if "error" in image.status:
-				print("could not delete image due to: " + image.status["error"])
+				self.err("could not delete image due to: " + image.status["error"])
 			else:
-				print("could not delete image")
+				self.ok("image succesfully deleted")
 		except:
-			print("image succesfully deleted")
+			self.err("could not delete image")
 
 	# ----------------------------
 	# UTILITY
@@ -302,10 +329,11 @@ class ImageCmd(TalusCmdBase):
 				time.sleep(1)
 				image.refresh()
 
-			print(image.status["vnc"])
+			self.ok("Image is up and running at {}".format(image.status["vnc"]["vnc"]["uri"]))
+			self.ok("Shutdown (yes, nicely shut it down) to save your changes")
 		else:
 			while image.status["name"] != "ready":
 				time.sleep(1)
 				image.refresh()
 
-			print("image {!r} is ready for use".format(image.name))
+			self.ok("image {!r} is ready for use".format(image.name))

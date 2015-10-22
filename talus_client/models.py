@@ -404,6 +404,16 @@ class Result(TalusModel):
 		"tags" : Field([], desc="Tags associated with this result")
 	}
 
+class Master(TalusModel):
+	"""The model for Master API objects -- intended to be READ ONLY"""
+	api_path = "api/master"
+	fields = {
+		"hostname": Field("", desc="The hostname of the master"),
+		"ip": Field("", desc="The ip address of the master"),
+		"vms": Field([], desc="A list of running vms on the master (for configuration)"),
+		"queues": Field({}, desc="A dict of priority queues and their contents"),
+	}
+
 class Slave(TalusModel):
 	"""The model for Slave API objects -- intended to be READ ONLY"""
 	api_path = "api/slave"

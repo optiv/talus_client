@@ -22,7 +22,14 @@ class OsCmd(TalusCmdBase):
 	def do_list(self, args):
 		"""List all operating system models defined in Talus
 		"""
-		print(tabulate(self._talus_client.os_iter(), headers=OS.headers()))
+		parts = shlex.split(args)
+
+		search = self._search_terms(parts)
+
+		if "sort" not in search:
+			search["sort"] = "name"
+
+		print(tabulate(self._talus_client.os_iter(**search), headers=OS.headers()))
 
 	def do_create(self, args):
 		"""Create a new operating system model in Talus
@@ -69,7 +76,7 @@ class OsCmd(TalusCmdBase):
 
 				try:
 					os.save()
-					self.ok("created new image {}".format(os.id))
+					self.ok("created new os {}".format(os.id))
 				except errors.TalusApiError as e:
 					self.err(str(e))
 				else:

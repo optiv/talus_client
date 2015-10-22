@@ -16,7 +16,7 @@ setup(
     author='Optiv Labs',
     maintainer='Optiv Labs',
     author_email='james.johnson@optiv.com',
-    url='https://github.com/optiv-labs/talus_client/tree/master',
+    url='https://github.com/optiv-labs/talus/tree/master/src/client',
     platforms='Cross Platform',
 	install_requires = open(os.path.join(os.path.dirname(__file__), "requirements.txt")).read().split("\n"),
     classifiers = [

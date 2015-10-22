@@ -27,9 +27,12 @@ class SlaveCmd(TalusCmdBase):
 		slave list
 
 		"""
+		parts = shlex.split(args)
+		search = self._search_terms(parts, user_default_filter=False)
+
 		headers = ["id", "hostname", "ip", "max_vms", "running_vms"]
 		values = []
-		for slave in self._talus_client.slave_iter():
+		for slave in self._talus_client.slave_iter(**search):
 			values.append([
 				slave.id,
 				slave.hostname,
@@ -45,14 +48,20 @@ class SlaveCmd(TalusCmdBase):
 		talus slave info ID_OR_HOSTNAME_OR_IP
 
 		"""
-		search_item = shlex.split(args)[0]
-		slave = Slave.find_one(self._talus_host, id=search_item)
+		if args.strip() == "":
+			raise talus_client.errors.TalusApiError("You must provide a slave ip/hostname/id")
+
+		parts = shlex.split(args)
+		leftover = []
+		slave_id_or_name = None
+		search = self._search_terms(parts, out_leftover=leftover, user_default_filter=False)
+		if len(leftover) > 0:
+			slave_id_or_name = leftover[0]
+
+		slave = self._resolve_one_model(slave_id_or_name, Slave, search, default_id_search=["hostname", "id", "ip"], sort="hostname")
+
 		if slave is None:
-			slave = Slave.find_one(self._talus_host, hostname=search_item)
-			if slave is None:
-				slave = Slave.find_one(self._talus_host, ip=search_item)
-				if slave is None:
-					raise talus_client.errors.TalusApiError("Could not locate slave by id/hostname/ip {!r}".format(search_item))
+			raise talus_client.errors.TalusApiError("Could not locate slave by id/hostname/ip {!r}".format(slave_id_or_name))
 
 		vm_headers = ["tool", "vnc", "running since", "job", "job idx"]
 		vm_vals = []
@@ -71,12 +80,12 @@ class SlaveCmd(TalusCmdBase):
 			vm_infos = "\n\n" + "\n".join("    {}".format(x) for x in tabulate(vm_vals, headers=vm_headers).split("\n"))
 
 		print("""
-ID: {id}
-UUID: {uuid}
-Hostname: {hostname}
-IP Addr: {ip}
-Jobs Run: {jobs_run}
-Max VMs: {max_vms}
+         ID: {id}
+       UUID: {uuid}
+   Hostname: {hostname}
+    IP Addr: {ip}
+   Jobs Run: {jobs_run}
+    Max VMs: {max_vms}
 Running VMs: {running_vms}{vm_infos}
 		""".format(
 			id			= slave.id,

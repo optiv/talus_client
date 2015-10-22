@@ -62,13 +62,15 @@ class FileSetCmd(TalusCmdBase):
  Created: {created}
 Modified: {modified}
    Files: {files}
+    Tags: {tags}
 		""".format(
 			id			= fileset.id,
 			name		= fileset.name,
-			job			= fileset.job if fileset.job is not None else "",
+			job			= self._nice_name(fileset, "job"),
 			created		= ts["created"],
 			modified	= ts["modified"],
-			files		= files_str
+			files		= files_str,
+			tags		= fileset.tags
 		))
 
 		if args.all:
@@ -83,11 +85,55 @@ Modified: {modified}
 		pass
 	
 	def do_list(self, args):
-		"""List defined filesets
+		"""List filesets in Talus.
+
+			fileset list --search-term value --search-term2 value
+
+		By default only filesets tagged with your name are shown. To show
+		all filesets, add the `--all` parameter:
+
+			fileset list --all
+
+		Dot notation can be used on subdocuments:
+
+			fileset list --timestamps.modified__gt 1445321463.898203
+
+		Sorting, skipping, and number of results can also be set using
+		`--sort field`, `--skip num`, and `--num num` respectively. A sort
+		value preceded by a negative sign reverses the sorting order:
+
+			fileset list --sort -timestamps.modified --skip 10 --num 5
+
+		MongoDB operators are allowed (don't forget to escape the $). See
+		https://docs.mongodb.org/manual/reference/operator/query/:
+			
+			fileset list --name.\\$regex ".*test.*"
+			fileset list --$where "this.files.length > 100"
+
+		MongoEngine operators are allowed as well. See
+		http://docs.mongoengine.org/guide/querying.html#query-operators:
+
+			fileset list --name__startswith "test"
 		"""
+		parts = shlex.split(args)
+		search = self._search_terms(parts)
+
+		all_mine = False
+		if "--all-mine" in parts:
+			parts.remove("--all-mine")
+			all_mine = True
+			self.out("showing all of your filesets")
+
+		if "sort" not in search:
+			search["sort"] = "timestamps.created"
+
+		if "--all" not in parts and not all_mine and "num" not in search:
+			search["num"] = 20
+			self.out("showing first 20 results (use --all to see everything)")
+
 		headers = ["id", "name", "num files", "job", "created", "modified"]
 		fields = []
-		for fileset in self._talus_client.fileset_iter():
+		for fileset in self._talus_client.fileset_iter(**search):
 			ts = {"modified" : "", "created": ""}
 			if "modified" in fileset.timestamps:
 				ts["modified"] = arrow.get(fileset.timestamps["modified"]).humanize()

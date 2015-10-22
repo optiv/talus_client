@@ -22,22 +22,70 @@ class TaskCmd(TalusCmdBase):
 	command_name = "task"
 
 	def do_list(self, args):
-		"""List all tasks in
+		"""List tasks in talus.
+
+			task list --searchterm value --searcterm2 value2
+
+		Dot notationc an be used on subdocuments:
+
+			task list --timestamps.created 1445321463.898203
+
+		Sorting, skipping, and number of results can also be set using
+		`--sort field`, `--skip num`, and `--num num` respectively. A sort
+		value preceded by a negative sign reverses the sorting order:
+
+			task list --sort -timestamps.created --skip 10 --num 5
+
+		MongoDB operators are allowed (don't forget to escape the $). See
+		https://docs.mongodb.org/manual/reference/operator/query/:
+			
+			task list --name.\\$regex ".*test.*"
+			task list --$where "this.name.length > 10"
+
+		MongoEngine operators are allowed as well. See
+		http://docs.mongoengine.org/guide/querying.html#query-operators:
+
+			task list --name__startswith "test"
 		"""
+		parts = shlex.split(args)
+		search = self._search_terms(parts)
+
+		if "--all" not in parts and "num" not in search:
+			search["num"] = 20
+			self.out("showing first 20 results (use --all or --all-mine)")
+
+		if "sort" not in search:
+			search["sort"] = "-timestamps.created"
+
 		tasks = []
-		headers = ["id", "name", "tool", "version"]
-		for task in self._talus_client.task_iter():
+		headers = ["id", "name", "tool", "version", "tags"]
+		for task in self._talus_client.task_iter(**search):
 			tasks.append([
 				task.id,
 				task.name,
-				task.tool + " (" + task._fields["tool"].value["name"] + ")",
-				task.version
+				self._nice_name(task, "tool"),
+				task.version,
+				task.tags
 			])
 		print(tabulate(tasks, headers=headers))
 	
 	def do_info(self, args):
 		"""List details about a task
 		"""
+		if args.strip() == "":
+			raise errors.TalusApiError("you must provide a name/id of a task to show info about it")
+
+		parts = shlex.split(args)
+		leftover = []
+		task_id_or_name = None
+		search = self._search_terms(parts, out_leftover=leftover)
+		if len(leftover) > 0:
+			task_id_or_name = leftover[0]
+
+		task = self._resolve_one_model(task_id_or_name, Task, search)
+
+		if task is None:
+			raise errors.TalusApiError("could not find talus task with id {!r}".format(task_id_or_name))
 
 	def do_create(self, args):
 		"""Create a new task in Talus
@@ -153,13 +201,3 @@ class TaskCmd(TalusCmdBase):
 		args = shlex.split(args)
 		self._talus_client.task_delete(args[0])
 		print("deleted")
-	
-	def do_run(self, args):
-		"""Run an existing task
-		"""
-		pass
-	
-	def do_clone(self, args):
-		"""Clone an existing task
-		"""
-		pass

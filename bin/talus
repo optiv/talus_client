@@ -18,17 +18,23 @@ else:
 	readline.parse_and_bind("tab: complete")
 
 if __name__ == "__main__":
+	host_changed = False
 	host = "http://localhost:8001"
 	if len(sys.argv) > 1 and sys.argv[1] in ["--host"]:
 		host = sys.argv[2]
+		host_changed = True
 		del sys.argv[1]
 		del sys.argv[1]
+	while host.endswith("/"):
+		host = host[:-1]
 	
 	talusrc_path = os.path.join(os.path.expanduser("~"), ".talusrc")
 	if os.path.exists(talusrc_path):
 		with open(talusrc_path, "rb") as f:
 			data = json.loads(f.read())
-		host = data["host"]
+
+		if not host_changed:
+			host = data["host"]
 		user = data["user"]
 	
 	else:
@@ -44,7 +50,7 @@ if __name__ == "__main__":
 
 		user = raw_input("You also don't have a username. Make one up please (and be reasonable): ")
 		while True:
-			answer = raw_input("You want to use '{}' as your username? (y/n) ")
+			answer = raw_input("You want to use '{}' as your username? (y/n) ".format(user))
 			if answer.lower().strip() in ["y", "yes"]:
 				print("ok, nice to meet you, *quote* {} *quote*".format(user))
 				break

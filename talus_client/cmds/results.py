@@ -29,16 +29,18 @@ class ResultCmd(TalusCmdBase):
 		"""
 		parts = shlex.split(args)
 
-		search = {}
-		key = None
-		for item in parts:
-			if key is None:
-				if not item.startswith("--"):
-					raise errors.TalusApiError("args must be alternating search item/value pairs!")
-				item = item[2:].replace("-", "_")
-				key = item
-			elif key is not None:
-				search[key] = item
-				print("searching for {} = {}".format(key, item))
+		all_mine = False
+		if "--all-mine" in parts:
+			parts.remove("--all-mine")
+			all_mine = True
+
+		search = self._search_terms(parts)
+
+		if "sort" not in search:
+			search["sort"] = "-created"
+
+		if "--all" not in parts and not all_mine and "num" not in search:
+			search["num"] = 20
+			self.out("showing first 20 results")
 
 		print(tabulate(self._talus_client.result_iter(**search), headers=Result.headers()))

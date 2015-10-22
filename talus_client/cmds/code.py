@@ -20,38 +20,39 @@ class CodeCmd(TalusCmdBase):
 	command_name = "code"
 
 	def do_list(self, args):
-		"""List existing code in Talus. By default it will list both
-		components and tools. Note that -t and -c are mutually exclusive
+		"""List existing code in Talus.
 
-		code list [-t or -c]
+			code list --search-term value --search-term2 value
 
-		     -t,--tools    List tools (default=False)
-		-c,--components    List components (default=False)
+		Dot notation can be used on subdocuments:
 
-		Examples:
+			code list --sort timestamps.created
 
-		List all components defined in Talus
+		Sorting, skipping, and number of results can also be set using
+		`--sort field`, `--skip num`, and `--num num` respectively. A sort
+		value preceded by a negative sign reverses the sorting order:
 
-			code list -t component
+			code list --type tool --sort timestamps.created --skip 10 --num 5
+
+		MongoDB operators are allowed (don't forget to escape the $). See
+		https://docs.mongodb.org/manual/reference/operator/query/:
+			
+			code list --name.\\$regex ".*test.*"
+			code list --$where "this.name + 'contrived' == 'SomeToolcontrived'"
+
+		MongoEngine operators are allowed as well. See
+		http://docs.mongoengine.org/guide/querying.html#query-operators:
+
+			code list --name__istartswith "test"
 		"""
-		parser = self._argparser()
-		parser.add_argument("--tools", "-t", default=False, action="store_true")
-		parser.add_argument("--components", "-c", default=False, action="store_true")
+		parts = shlex.split(args)
 
-		args = parser.parse_args(shlex.split(args))
+		# code doesn't really use tags for users (yet?)
+		parts.append("--all")
 
-		type_ = None
-		if args.tools:
-			type_ = "tool"
+		search = self._search_terms(parts)
 
-		if args.components:
-			# they want to see everything, make it None then
-			if type_ is not None:
-				type_ = None
-			else:
-				type_ = "component"
-
-		print(tabulate(self._talus_client.code_iter(type_=type_), headers=Code.headers()))
+		print(tabulate(self._talus_client.code_iter(**search), headers=Code.headers()))
 	
 	def do_create(self, args):
 		"""Create new code in the repository. This will create the code in the talus
@@ -67,6 +68,7 @@ class CodeCmd(TalusCmdBase):
 		parser.add_argument("name")
 		parser.add_argument("--tool", "-t", default=False, action="store_true")
 		parser.add_argument("--component", "-c", default=False, action="store_true")
+		parser.add_argument("--tag", dest="tags", action="append")
 
 		args = parser.parse_args(args)
 
@@ -79,12 +81,18 @@ class CodeCmd(TalusCmdBase):
 		if args.tool:
 			code_type = "tool"
 		else:
-			code_type == "component"
+			code_type = "component"
 
 		res = self._talus_client.code_create(
 			code_name	= args.name,
-			code_type	= code_type
+			code_type	= code_type,
+			tags		= args.tags
 		)
+
+		if res["status"] == "error":
+			self.err(res["message"])
+		else:
+			self.ok(res["message"])
 	
 	def do_info(self, args):
 		"""List the details of a code item (tool or component).
