@@ -315,6 +315,7 @@ Exploitability Details: \n{exploit_details}
 			
 		res = """
               ID: {id}
+             Job: {job}
   Exploitability: {expl}
 Hash Major/Minor: {hash_major} {hash_minor}
      Crash Instr: {crash_instr}
@@ -324,6 +325,7 @@ Hash Major/Minor: {hash_major} {hash_minor}
 {asm_and_regs}{details}
 		""".format(
 			id				= crash.id,
+			job				= self._nice_name(crash, "job"),
 			expl			= crash.data.setdefault("exploitability", "None"),
 			hash_major		= crash.data.setdefault("hash_major", "None"),
 			hash_minor		= crash.data.setdefault("hash_minor", "None"),
