@@ -299,6 +299,9 @@ class CrashesCmd(TalusCmdBase):
 
 		details = ""
 		if show_details:
+			if isinstance(crash.data.setdefault("backtrace", ""), list):
+				crash.data["backtrace"] = "\n".join(crash.data["backtrace"])
+
 			detail_indent = " " * 4
 
 			details += """
@@ -312,7 +315,7 @@ Exploitability Details: \n{exploit_details}
 				backtrace		= "\n".join(detail_indent + x for x in crash.data.setdefault("backtrace", "").split("\n")),
 				exploit_details	= "\n".join(detail_indent + x for x in crash.data.setdefault("exploitability_details", "").split("\n")),
 			)
-			
+
 		res = """
               ID: {id}
              Job: {job}
@@ -331,7 +334,7 @@ Hash Major/Minor: {hash_major} {hash_minor}
 			hash_minor		= crash.data.setdefault("hash_minor", "None"),
 			crash_instr		= crashing_instr,
 			crash_module	= crash.data.setdefault("crash_module", ""),
-			exception_code	= crash.data.setdefault("exception_code", "None"),
+			exception_code	= crash.data.setdefault("exception_code", 0),
 			reg_tables		= "\n".join(indent + x for x in reg_lines),
 			asm_and_regs	= "\n".join("    " + x for x in asm_and_regs),
 			details			= details,
