@@ -196,6 +196,9 @@ class TalusModel(object):
 	# other
 	# --------------------
 
+	def is_existing(self):
+		return "id" in self._fields
+
 	def clear_id(self):
 		if "id" in self._fields:
 			del self._fields["id"]

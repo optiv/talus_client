@@ -89,8 +89,11 @@ class TalusCmdBase(object,cmd.Cmd):
 		search["sort"] = sort
 		return model.find_one(**search)
 	
-	def _search_terms(self, parts, key_remap=None, user_default_filter=True, out_leftover=None):
+	def _search_terms(self, parts, key_remap=None, user_default_filter=True, out_leftover=None, no_hex_keys=None):
 		"""Return a dictionary of search terms"""
+
+		if no_hex_keys is None:
+			no_hex_keys = []
 		search = {}
 		key = None
 		if key_remap is None:
@@ -125,7 +128,7 @@ class TalusCmdBase(object,cmd.Cmd):
 
 			elif key is not None:
 				# hex conversion
-				if re.match(r'^0x[0-9a-f]+$', item, re.IGNORECASE) is not None:
+				if re.match(r'^0x[0-9a-f]+$', item, re.IGNORECASE) is not None and key.split("__")[0] not in no_hex_keys:
 					item = int(item, 16)
 
 				if key in search and not isinstance(search[key], list):

@@ -86,6 +86,23 @@ class TaskCmd(TalusCmdBase):
 
 		if task is None:
 			raise errors.TalusApiError("could not find talus task with id {!r}".format(task_id_or_name))
+	
+	def do_edit(self, args):
+		"""Edit an existing task in Talus. Interactive mode only
+		"""
+		if args.strip() == "":
+			raise errors.TalusApiError("you must provide a name/id of a task to edit it")
+
+		parts = shlex.split(args)
+		leftover = []
+		task_id_or_name = None
+		search = self._search_terms(parts, out_leftover=leftover)
+		if len(leftover) > 0:
+			task_id_or_name = leftover[0]
+
+		task = self._resolve_one_model(task_id_or_name, Task, search)
+
+		self._interactive_loop(task)
 
 	def do_create(self, args):
 		"""Create a new task in Talus
@@ -120,41 +137,8 @@ class TaskCmd(TalusCmdBase):
 		args = shlex.split(args)
 		if self._go_interactive(args):
 			task = Task()
-			self._prep_model(task)
 			task.version = None
-
-			stop = False
-			while not stop:
-				model_cmd = self._make_model_cmd(task)
-				cancelled = model_cmd.cmdloop()
-				if cancelled:
-					break
-
-				stop = True
-				if task.limit is None:
-					self.err("You must set a default limit for the task!")
-					stop = False
-
-				if task.name is None or task.name == "":
-					self.err("You must set a name for the task!")
-					stop = False
-
-				if task.tool is None:
-					self.err("You must choose a tool for the task!")
-					stop = False
-
-				if len(task.params) == 0:
-					res = self.ask("No parameters are set. Is this ok? (y/n) ")
-					if res.strip().lower() not in ["y", "yes"]:
-						stop = False
-
-				try:
-					task.timestamps = {"created": time.time()}
-					task.save()
-					self.ok("created new task {}".format(task.id))
-				except errors.TalusApiError as e:
-					print(e.message)
-
+			self._interactive_loop(task)
 			return
 
 		parser = self._argparser()
@@ -201,3 +185,57 @@ class TaskCmd(TalusCmdBase):
 		args = shlex.split(args)
 		self._talus_client.task_delete(args[0])
 		print("deleted")
+	
+	# -------------------------------------
+	# utility
+	# -------------------------------------
+
+	def _interactive_loop(self, task):
+		"""Handle the interactive editing of a task (new or existing)
+		"""
+		self._prep_model(task)
+
+		stop = False
+		while not stop:
+			model_cmd = self._make_model_cmd(task)
+			cancelled = model_cmd.cmdloop()
+			if cancelled:
+				break
+
+			stop = True
+			if task.limit is None:
+				self.err("You must set a default limit for the task!")
+				stop = False
+
+			if task.name is None or task.name == "":
+				self.err("You must set a name for the task!")
+				stop = False
+
+			if task.tool is None:
+				self.err("You must choose a tool for the task!")
+				stop = False
+
+			if len(task.params) == 0:
+				res = self.ask("No parameters are set. Is this ok? (y/n) ")
+				if res.strip().lower() not in ["y", "yes"]:
+					stop = False
+
+			try:
+				existing = task.is_existing()
+
+				if existing:
+					task.timestamps["modified"] = time.time()
+				else:
+					task.timestamps = {"created": time.time()}
+
+				task.save()
+
+				if existing:
+					self.ok("succesfully edited task {}".format(task.id))
+				else:
+					self.ok("created new task {}".format(task.id))
+
+			except errors.TalusApiError as e:
+				print(e.message)
+
+		return

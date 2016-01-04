@@ -217,10 +217,10 @@ class TalusClient(object):
 			raise errors.TalusApiError("image with id or name {!r} not found".format(image_id_or_name))
 			return
 
-		if image.status["name"] != "ready":
-			raise errors.TalusApiError("Image is not in ready state, cannot configure (state is {})".format(
-				image.status["name"]
-			))
+		#if image.status["name"] != "ready":
+			#raise errors.TalusApiError("Image is not in ready state, cannot configure (state is {})".format(
+				#image.status["name"]
+			#))
 
 		image.status = {
 			"name": "configure",
