@@ -40,6 +40,15 @@ class ParameterCmd(TalusCmdBase):
 
 		for pinfo in self._code_model.params:
 			self._param_infos[pinfo["name"]] = pinfo
+
+		to_delete = []
+		for k,v in self._params.iteritems():
+			if k not in self._param_infos:
+				self.warn("previously set parameter {} does not exist anymore".format(k))
+				to_delete.append(k)
+
+		for k in to_delete:
+			del self._params[k]
 	
 	def _cast_param_str(self, name, param):
 		finfo = self._param_infos[name]

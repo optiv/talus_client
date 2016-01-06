@@ -364,11 +364,15 @@ Running VMS: {running_vms}
 		job.logs = []
 		job.progress = 0
 		self._prep_model(job) # make sure our username is tagged in it
-		job.save()
+
+		if self._go_interactive(parts):
+			self.do_create("--shell", job=job)
+		else:
+			job.save()
 
 		self.ok("created job {} ({}) as clone of {}".format(job.name, job.id, old_id))
 	
-	def do_create(self, args):
+	def do_create(self, args, job=None):
 		"""Create a new job in Talus
 
 		job create TASK_NAME_OR_ID -i IMAGE [-n NAME] [-p PARAMS] [-q QUEUE] [--priority (0-100)] [--network]
@@ -401,31 +405,34 @@ Running VMS: {running_vms}
 		"""
 		args = shlex.split(args)
 		if self._go_interactive(args):
-			tasks = list(self._talus_client.task_iter())
-			fields = []
-			for x in xrange(len(tasks)):
-				task = tasks[x]
-				fields.append([x, task.name, task.id])
+			if job is None:
+				tasks = list(self._talus_client.task_iter())
+				fields = []
+				for x in xrange(len(tasks)):
+					task = tasks[x]
+					fields.append([x, task.name, task.id])
 
-			headers = ["idx", "name", "task.id"]
+				headers = ["idx", "name", "task.id"]
 
-			idx = utils.idx_prompt(fields, "Which task should the job be based on?", headers=headers)
-			if idx is None:
-				return
+				idx = utils.idx_prompt(fields, "Which task should the job be based on?", headers=headers)
+				if idx is None:
+					return
 
-			task = tasks[idx]
-			job = Job(api_base=self._talus_client._api_base)
-			self._prep_model(job)
-			job.image = task.image
-			job.task = task.id
-			job.limit = task.limit
-			job.name = task.name + " " + str(datetime.datetime.now())
-			job.params = task.params
-			job.status = {"name": "run"}
-			job.vm_max = task.vm_max
-			job.queue = "jobs"
+				task = tasks[idx]
 
-			self.out("basing job on task named {!r} ({})".format(task.name, task.id))
+				job = Job(api_base=self._talus_client._api_base)
+				job.tags = task.tags
+				self._prep_model(job)
+				job.image = task.image
+				job.task = task.id
+				job.limit = task.limit
+				job.name = task.name + " " + str(datetime.datetime.now())
+				job.params = task.params
+				job.status = {"name": "run"}
+				job.vm_max = task.vm_max
+				job.queue = "jobs"
+
+				self.out("basing job on task named {!r} ({})".format(task.name, task.id))
 
 			while True:
 				param_cmd = self._make_model_cmd(job)

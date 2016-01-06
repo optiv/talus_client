@@ -121,6 +121,56 @@ class ImageCmd(TalusCmdBase):
 
 		self._wait_for_image(image, args.interactive)
 	
+	def do_edit(self, args):
+		"""Edit an existing image. Interactive mode only
+		"""
+		if args.strip() == "":
+			raise errors.TalusApiError("you must provide a name/id of an image to edit it")
+
+		parts = shlex.split(args)
+		leftover = []
+		image_id_or_name = None
+		search = self._search_terms(parts, out_leftover=leftover)
+		if len(leftover) > 0:
+			image_id_or_name = leftover[0]
+
+		image = self._resolve_one_model(image_id_or_name, Image, search)
+
+		if image is None:
+			raise errors.TalusApiError("could not find talus image with id {!r}".format(image_id_or_name))
+
+		while True:
+			model_cmd = self._make_model_cmd(image)
+			cancelled = model_cmd.cmdloop()
+			if cancelled:
+				break
+
+			error = False
+			if image.os is None:
+				self.err("You must specify the os")
+				error = True
+
+			if image.name is None or image.name == "":
+				self.err("You must specify a name for the image")
+				error = True
+
+			if image.base_image is None:
+				self.err("You must specify the base_image for your new image")
+				error = True
+
+			if error:
+				continue
+
+			try:
+				image.timestamps = {"modified": time.time()}
+				image.save()
+				self.ok("edited image {}".format(image.id))
+				self.ok("note that this DOES NOT start the image for configuring!")
+			except errors.TalusApiError as e:
+				self.err(e.message)
+
+			return
+	
 	def do_create(self, args):
 		"""Create a new image in talus using an existing base image. Anything not explicitly
 		specified will be inherited from the base image, except for the name, which is required.
@@ -202,7 +252,7 @@ class ImageCmd(TalusCmdBase):
 				else:
 					self._wait_for_image(image, image.status["user_interaction"])
 
-			return
+				return
 
 		parser = self._argparser()
 		parser.add_argument("--os", "-o", default=None)

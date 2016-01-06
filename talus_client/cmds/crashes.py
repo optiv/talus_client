@@ -35,7 +35,7 @@ class CrashesCmd(TalusCmdBase):
 			crash list --search-item "search value" [--search-item2 "search value2" ...]
 			crash list --registers.eip 0x41414141
 			crash list --all --tags browser_fuzzing
-			crash list --exploitability EXPLOITABLE
+			rash list --exploitability EXPLOITABLE
 			crash list --\$where "(this.data.registers.eax + 0x59816867) == this.data.registers.eip"
 		"""
 		parts = shlex.split(args)
@@ -45,9 +45,9 @@ class CrashesCmd(TalusCmdBase):
 			parts.remove("--all-mine")
 			all_mine = True
 
-		search = self._search_terms(parts)
+		search = self._search_terms(parts, no_hex_keys=["hash_major", "hash_minor", "hash"])
 
-		root_level_items = ["created", "tags", "job", "tool", "$where", "sort", "num"]
+		root_level_items = ["created", "tool", "tags", "job", "tool", "$where", "sort", "num", "skip"]
 		new_search = {}
 		new_search["type"] = "crash"
 		for k,v in search.iteritems():
@@ -65,7 +65,7 @@ class CrashesCmd(TalusCmdBase):
 			self.out("showing first 20 results")
 
 		rows = []
-		headers = ["id", "tool", "created", "exploitability", "hash", "instr", "registers"]
+		headers = ["id", "task", "tags", "created", "exploitability", "hash", "instr", "registers"]
 		added_regs = False
 
 		for crash in self._talus_client.result_iter(**search):
@@ -123,11 +123,12 @@ class CrashesCmd(TalusCmdBase):
 				colors.append(color)
 
 			for reg,color in reg_colors.iteritems():
-				crashing_instr = crashing_instr.replace(reg, color + reg + colorama.Style.RESET_ALL)
+				crashing_instr = re.sub(r"\b" + reg + r"\b", color + reg + colorama.Style.RESET_ALL, crashing_instr)
 
 			rows.append([
 				crash.id,
 				crash.tool,
+				",".join(crash.tags),
 				self._rel_date(crash.created),
 				crash.data.setdefault("exploitability", "?"),
 				"{}:{}".format(crash.data.setdefault("hash_major", "?"), crash.data.setdefault("hash_minor", "?")),
@@ -168,7 +169,7 @@ class CrashesCmd(TalusCmdBase):
 
 			leftover = []
 			crash_id_or_name = None
-			search = self._search_terms(parts, out_leftover=leftover)
+			search = self._search_terms(parts, out_leftover=leftover, no_hex_keys=["hash_major", "hash_minor", "hash"])
 
 			root_level_items = ["created", "tags", "job", "tool", "$where", "sort", "num"]
 			new_search = {}
@@ -241,7 +242,7 @@ class CrashesCmd(TalusCmdBase):
 					reg_lines.append(fmt_string.format(table1[x], table2[x]))
 
 		for reg,color in reg_colors.iteritems():
-			crashing_instr = crashing_instr.replace(reg, color + reg + colorama.Style.RESET_ALL)
+			crashing_instr = re.sub(r"\b" + reg + r"\b", color + reg + colorama.Style.RESET_ALL, crashing_instr)
 
 		indent = "                  "
 
@@ -263,7 +264,7 @@ class CrashesCmd(TalusCmdBase):
 
 			line_no_color = line
 			for reg,color in reg_colors.iteritems():
-				line = line.replace(reg, color + reg + colorama.Style.RESET_ALL)
+				line = re.sub(r"\b" + reg + r"\b", color + reg + colorama.Style.RESET_ALL, line)
 
 			has_arrow = (arrow in line)
 			line = line.replace(arrow, "")
@@ -272,8 +273,14 @@ class CrashesCmd(TalusCmdBase):
 			match = re.match(r'^\s+([a-f0-9]+)\s+([a-f0-9]+)\s+(.*)$', line)
 			no_color_match = re.match(r'^\s+([a-f0-9]+)\s+([a-f0-9]+)\s+(.*)$', line_no_color)
 			if match is None:
-				asm_rows.append(["", "", "", line])
-				asm_rows_no_color.append(["", "", "", line_no_color])
+				match2 = re.match(r'^\s+([a-f0-9]+)\s+(.*)$', line)
+				no_color_match2 = re.match(r'^\s+([a-f0-9]+)\s+(.*)$', line_no_color)
+				if match2 is None:
+					asm_rows.append(["", "", "", line])
+					asm_rows_no_color.append(["", "", "", line_no_color])
+				else:
+					asm_rows.append(["-->" if has_arrow else "", "", match2.group(1), match2.group(2)])
+					asm_rows_no_color.append(["-->" if has_arrow else "", "", no_color_match2.group(1), no_color_match2.group(2)])
 			else:
 				asm_rows.append(["-->" if has_arrow else "", match.group(1), match.group(2), match.group(3)])
 				asm_rows_no_color.append(["-->" if has_arrow else "", no_color_match.group(1), no_color_match.group(2), no_color_match.group(3)])
@@ -318,6 +325,7 @@ Exploitability Details: \n{exploit_details}
 
 		res = """
               ID: {id}
+            Tags: {tags}
              Job: {job}
   Exploitability: {expl}
 Hash Major/Minor: {hash_major} {hash_minor}
@@ -328,6 +336,7 @@ Hash Major/Minor: {hash_major} {hash_minor}
 {asm_and_regs}{details}
 		""".format(
 			id				= crash.id,
+			tags			= ",".join(crash.tags),
 			job				= self._nice_name(crash, "job"),
 			expl			= crash.data.setdefault("exploitability", "None"),
 			hash_major		= crash.data.setdefault("hash_major", "None"),
@@ -373,7 +382,7 @@ Hash Major/Minor: {hash_major} {hash_minor}
 
 		leftover = []
 		crash_id_or_name = None
-		search = self._search_terms(parts, out_leftover=leftover)
+		search = self._search_terms(parts, out_leftover=leftover, no_hex_keys=["hash_major", "hash_minor", "hash"])
 
 		root_level_items = ["created", "tags", "job", "tool", "$where", "sort", "num", "dest"]
 		new_search = {}
@@ -386,6 +395,7 @@ Hash Major/Minor: {hash_major} {hash_minor}
 		search = new_search
 
 		dest_dir = search.setdefault("dest", os.getcwd())
+		dest_dir = os.path.expanduser(dest_dir)
 		del search["dest"]
 
 		if len(leftover) > 0:
@@ -401,10 +411,8 @@ Hash Major/Minor: {hash_major} {hash_minor}
 			crash.tags
 		))
 
-		unique = md5.new(str(crash.id)).hexdigest()
-		split = len(unique)/2
-		first_num = int(unique[:split], 16)
-		second_num = int(unique[split:], 16)
+		first_num = int(crash.data["hash_major"], 16)
+		second_num = int(crash.data["hash_minor"], 16)
 		adj = utils.ADJECTIVES[first_num % len(utils.ADJECTIVES)]
 		noun = utils.NOUNS[second_num % len(utils.NOUNS)]
 
@@ -421,14 +429,14 @@ Hash Major/Minor: {hash_major} {hash_minor}
 		file_path = os.path.join(dest_path, "crash.json")
 		self.out(file_path)
 		with open(file_path, "wb") as f:
-			f.write(json.dumps(crash._filtered_fields(), indent=4, separators=(",", ": ")))
+			f.write(json.dumps(crash._filtered_fields(), indent=4, separators=(",", ": ")).encode("utf-8"))
 
 		file_path = os.path.join(dest_path, "crash.txt")
 		self.out(file_path)
 		with open(file_path, "wb") as f:
 			txt_info = self.do_info("", return_string=True, crash=crash, show_details=True)
 			txt_info = utils.strip_color(txt_info)
-			f.write(txt_info)
+			f.write(txt_info.encode("utf-8"))
 
 		for file_id in crash.data.setdefault("repro", []):
 			fname,data = self._talus_client.corpus_get(file_id)
@@ -441,6 +449,6 @@ Hash Major/Minor: {hash_major} {hash_minor}
 
 			self.out(file_path)
 			with open(file_path, "wb") as f:
-				f.write(data)
+				f.write(data.encode("utf-8"))
 
 		self.ok("done exporting crash")
